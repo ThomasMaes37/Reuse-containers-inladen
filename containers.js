@@ -34,7 +34,11 @@
   if (already) { already.remove(); var oc = document.getElementById(ID + '_css'); if (oc) oc.remove(); return; }
 
   /* ---------------- versie ---------------- */
-  var VERSION = 'v2026-09-28g · bewerkbaar + OCR · MSC/Hapag/Maersk/CMA · multi-seal + komma-gewichten';
+  var VERSION = 'v2026-11-10h · bewerkbaar + OCR · MSC/Hapag/Maersk/CMA · multi-seal + komma-gewichten';
+
+  /* Map waar collega's een BL die NIET kan worden ingelezen achterlaten, zodat ze
+     later aan de herkenning kan worden toegevoegd ("laten aanleren"). */
+  var SUBMIT_DIR = "P:\\TRADING\\Claude applicaties\\DOCUMENTATION\\Container SEQ - APPLICATIE\\_Niet ingelezen BL's";
 
   /* ---------------- state ---------------- */
   var state = { bl: null, pl: null, blNumber: null, plNumber: null, plTotalNet: null };
@@ -81,7 +85,7 @@
   /* ---------------- overlay ---------------- */
   var box = document.createElement('div'); box.id = ID;
   box.innerHTML =
-    '<div class="rf-hd"><b>Containers invullen</b><span style="font-size:10px;opacity:.7;margin-left:auto;margin-right:10px">' + VERSION + '</span><span class="rf-x" title="Sluiten">&times;</span></div>' +
+    '<div class="rf-hd"><b>Containers invullen</b><span class="rf-x" title="Sluiten" style="margin-left:auto">&times;</span></div>' +
     '<div class="rf-bd">' +
       '<div class="rf-zones">' +
         '<div class="rf-zone rf-zone-bl"><span class="rf-zt">1. Bill of Lading</span>sleep hier (of klik)<small></small></div>' +
@@ -93,6 +97,7 @@
       '<div class="rf-result"></div>' +
     '</div>';
   document.body.appendChild(box);
+  try { console.log('Containers-tool ' + VERSION); } catch (e) {}   /* versie enkel in console voor support, niet in beeld */
 
   var msgEl = box.querySelector('.rf-msg');
   var resEl = box.querySelector('.rf-result');
@@ -380,20 +385,39 @@
     zonePL.classList.remove('err'); zonePL.classList.add('on');
     zonePL.querySelector('small').textContent = zoneName(file.name) + ' (' + rows.length + (viaOcr ? ', OCR' : '') + ')';
   }
+  /* Verwijzing naar de inzendmap: toont het mappad + een "kopieer"-knop zodat een
+     collega een niet-leesbare BL daar kan plaatsen om te laten toevoegen. */
+  function submitHtml(file) {
+    return '<div style="margin-top:9px;font-size:12px;line-height:1.5;border-top:1px solid #e5eaef;padding-top:8px">' +
+      'Lukt het inlezen niet? Plaats <b>' + zoneName(file ? file.name : 'de BL') + '</b> in de map ' +
+      'zodat ze voor de volgende keer kan worden toegevoegd:<br>' +
+      '<code style="display:inline-block;margin:4px 0;background:#f0f3f6;padding:3px 6px;border-radius:4px;font-size:11px;word-break:break-all">' + SUBMIT_DIR + '</code><br>' +
+      '<span class="rf-copy" style="color:#4a90d9;cursor:pointer;text-decoration:underline">&#128203; Kopieer mappad</span>' +
+      ' &middot; je kan de container ondertussen ook zelf in de tabel invullen en gewoon verdergaan.</div>';
+  }
+  function wireCopy(scope) {
+    var c = (scope || msgEl).querySelector('.rf-copy'); if (!c) return;
+    c.onclick = function () {
+      try { navigator.clipboard.writeText(SUBMIT_DIR); c.textContent = '✓ Mappad gekopieerd'; }
+      catch (e) { c.textContent = SUBMIT_DIR; }
+    };
+  }
   function offerOcr(kind, file) {
     var zone = kind === 'bl' ? zoneBL : zonePL;
     zone.classList.add('err'); zone.classList.remove('on'); zone.querySelector('small').textContent = file.name;
     if (kind === 'bl') state.bl = null; else state.pl = null;
     msgEl.className = 'rf-msg rf-warn';
     msgEl.innerHTML = 'Geen leesbare tekst in deze ' + (kind === 'bl' ? 'Bill of Lading' : 'Packing List') +
-      ' — de gegevens staan als afbeelding/scan.<br><span class="rf-ocr">&#128196; Lees met tekstherkenning (OCR)</span>';
+      ' — de gegevens staan als afbeelding/scan.<br><span class="rf-ocr">&#128196; Lees met tekstherkenning (OCR)</span>' +
+      submitHtml(file);
     var b = msgEl.querySelector('.rf-ocr'); if (b) b.onclick = function () { runOcr(kind, file); };
+    wireCopy(msgEl);
   }
   function runOcr(kind, file) {
     msg('OCR wordt gestart… de PDF-lezer + tekstherkenning worden eenmalig ingeladen (kan even duren).');
     ocrLines(file, function (p) { msg(p); }).then(function (lines) {
       var rows = kind === 'bl' ? parseBLlines(lines) : parsePLlines(lines);
-      if (!rows.length) { msg('OCR vond geen containers in dit document. Controleer het bestand of voeg de rijen handmatig toe in de tabel.', 'err'); return; }
+      if (!rows.length) { msgEl.className = 'rf-msg rf-warn'; msgEl.innerHTML = 'OCR vond geen containers in dit document.' + submitHtml(file); wireCopy(msgEl); return; }
       var txt = lines.join(' ');
       if (kind === 'bl') applyBL(rows, txt, file, true); else applyPL(rows, txt, file, true);
       recompute();
